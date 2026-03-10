@@ -96,8 +96,8 @@ def make_params():
         "t0": 0.0,
         "t_end": 365.0 * 2,  # days
         "nt": 400,           # output points
-        "rtol": 1e-7,
-        "atol": 1e-9,
+        "rtol": 1e-3,
+        "atol": 1e-3,
     }
     return p
 
@@ -390,7 +390,7 @@ def run_simulation(p):
         t_span=(p["t0"], p["t_end"]),
         y0=y0,
         t_eval=t_eval,
-        method="BDF",
+        method="LSODA",
         rtol=p["rtol"],
         atol=p["atol"],
     )
@@ -413,7 +413,7 @@ def plot_final_profiles(p, y_final):
 
     fig, ax = plt.subplots(figsize=(6, 6))
     ax.plot(I, z)
-    ax.set_xlabel("Light I(z) (mmol ph/m$^2$/s)")
+    ax.set_xlabel("Light I(z) (µmol ph/m$^2$/s)")
     ax.set_ylabel("Depth (m)")
     ax.invert_yaxis()
     #ax.set_title("Final light profile")
@@ -424,7 +424,7 @@ def plot_final_profiles(p, y_final):
     ax.plot(P, z, label="P")
     ax.plot(Zc, z, label="Z")
     ax.plot(D, z, label="D")
-    ax.plot(O/10, z, label="O")
+    ax.plot(O/10, z, label="O/10")
     ax.set_xlabel("Concentration (mmol X m$^{-3}$)")
     ax.set_ylabel("Depth (m)")
     ax.invert_yaxis()
@@ -589,24 +589,91 @@ def plot_npzdo_comparison(z, base, high):
 
 
 ##############################################
+# Sensitivity analysis
+##############################################
+
+def sensitivity_analysis(param_name, new_value, unit):
+    # --- Default simulation ---
+    p_default = make_params()
+    p_default = build_grid(p_default)
+    sol_default = run_simulation(p_default)
+
+    # --- Modified simulation ---
+    p_mod = make_params()
+    p_mod[param_name] = new_value
+    p_mod = build_grid(p_mod)
+    sol_mod = run_simulation(p_mod)
+
+    # --- Extract final states ---
+    y_def = sol_default.y[:, -1]
+    y_mod = sol_mod.y[:, -1]
+
+    N0, P0, Z0, D0, O0 = unpack_state(y_def, p_default)
+    N1, P1, Z1, D1, O1 = unpack_state(y_mod, p_mod)
+
+    z = p_default["z"]
+
+    # --- Plot ---
+    fig, ax = plt.subplots(figsize=(6,6))
+
+    # Nutrients
+    ax.plot(N0, z, '--', color='orange',
+            label=f"N default ({param_name}={p_default[param_name]} {unit})")
+    ax.plot(N1, z, '-', color='orange',
+            label=f"N modified ({param_name}={new_value} {unit})")
+
+    # Phytoplankton
+    ax.plot(P0, z, '--', color='green', label="P default")
+    ax.plot(P1, z, '-', color='green', label="P modified")
+
+    # Zooplankton
+    ax.plot(Z0, z, '--', color='violet', label="Z default")
+    ax.plot(Z1, z, '-', color='violet', label="Z modified")
+
+    # Detritus
+    ax.plot(D0, z, '--', color='pink', label="D default")
+    ax.plot(D1, z, '-', color='pink', label="D modified")
+
+    # Oxygen
+    ax.plot(O0/10, z, '--', color='blue', label="O/10 default")
+    ax.plot(O1/10, z, '-', color='blue', label="O/10 modified")
+
+    ax.set_xlabel("Concentration (mmol m$^{-3}$)")
+    ax.set_ylabel("Depth (m)")
+    ax.invert_yaxis()
+
+    ax.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+
+##############################################
 # Output
 ##############################################
 
 p = make_params()
 p = build_grid(p)
 p["use_phyto_light_damping"] = True
-p["use_seasonal_light"] = True
-p["use_seasonal_diffusivity"] = True
+p["use_seasonal_light"] = False
+p["use_seasonal_diffusivity"] = False
 sol = run_simulation(p)
 
 plot_convergence_colormesh(p, sol)
 plot_final_profiles(p, sol.y[:, -1])
 plot_limiting_resource(p, sol.y[:, -1])
 
-
 # Low/high nutrient input
-'''p_base, p_highN, sol_base, sol_highN = run_baseline_vs_highN()
+'''
+p_base, p_highN, sol_base, sol_highN = run_baseline_vs_highN()
 z, base_profiles, high_profiles = extract_profiles(p_base, p_highN, sol_base, sol_highN)
 plot_final_profiles(p_base, sol_base.y[:, -1])
 plot_final_profiles(p_highN, sol_highN.y[:, -1])
-plot_npzdo_comparison(z, base_profiles, high_profiles)'''
+plot_npzdo_comparison(z, base_profiles, high_profiles)
+'''
+
+# Sensitivity analysis
+'''
+sensitivity_analysis("kL", 62.5, "µmol ph/m$^2$/s")
+sensitivity_analysis("gP_max", 2.0, "day$^{-1}$")
+'''
